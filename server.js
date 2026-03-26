@@ -141,10 +141,12 @@ const ROUTES = [
   ["GET", "/api/inference/local/bootstrap-options", "Local bootstrap model options"],
   ["POST", "/api/inference/local/validate", "Validate local inference provider or model"],
   ["GET", "/api/gateway/status", "Named gateway status"],
+  ["GET", "/api/gateway/inspect", "Deep gateway inspection"],
   ["GET", "/api/openshell/diagnostics", "OpenShell and container runtime diagnostics"],
   ["GET", "/api/runtime/platform", "Platform and container runtime internals"],
   ["GET", "/api/runtime/registry", "Sandbox registry internals"],
   ["GET", "/api/runtime/inference-config", "Inference route and provider defaults"],
+  ["GET", "/api/openapi.json", "OpenAPI export for standalone wrapper"],
   ["GET", "/api/environment/summary", "Local runtime and environment summary"],
   ["GET", "/api/preflight/port?port=18789", "Port availability preflight"],
   ["GET", "/api/preflight/ports?ports=18789,3100", "Batch port availability preflight"],
@@ -157,6 +159,7 @@ const ROUTES = [
   ["GET", "/api/nim/gpu", "GPU and NIM model support"],
   ["GET", "/api/nim/models/compatible", "NIM model compatibility for current host"],
   ["GET", "/api/services/status", "Services status"],
+  ["GET", "/api/services/inspect", "Deep services inspection"],
   ["GET", "/api/services/structured-status", "Structured services status"],
   ["GET", "/api/services/logs/:service", "Read service log file"],
   ["POST", "/api/start", "CLI start alias"],
@@ -605,6 +608,30 @@ function getGatewayStatus() {
   };
 }
 
+function getGatewayInspect() {
+  const openshellStatus = runOpenshell(["status"]);
+  const namedGatewayInfo = runOpenshell(["gateway", "info", "-g", "nemoclaw"]);
+  const inference = runOpenshell(["inference", "get"]);
+  const statusText = stripAnsi(`${openshellStatus.stdout}${openshellStatus.stderr}`);
+  const gatewayInfoText = stripAnsi(`${namedGatewayInfo.stdout}${namedGatewayInfo.stderr}`);
+  const inferenceText = stripAnsi(`${inference.stdout}${inference.stderr}`);
+  return {
+    summary: getGatewayStatus(),
+    heuristics: {
+      activeGateway: getActiveGatewayName(statusText),
+      namedGatewayPresent: hasNamedGateway(gatewayInfoText),
+      connectionRefused: /Connection refused|client error \(Connect\)|tcp connect error/i.test(statusText),
+      handshakeError: /handshake verification failed|Missing gateway auth token|device identity required/i.test(statusText),
+      configuredInference: inferenceConfig.parseGatewayInference(inferenceText),
+    },
+    raw: {
+      openshellStatus: wrapCommand("openshell status", openshellStatus),
+      namedGatewayInfo: wrapCommand("openshell gateway info -g nemoclaw", namedGatewayInfo),
+      inference: wrapCommand("openshell inference get", inference),
+    },
+  };
+}
+
 function getSandboxGatewayState(sandboxName) {
   const result = runOpenshell(["sandbox", "get", sandboxName]);
   const output = `${result.stdout}${result.stderr}`;
@@ -740,6 +767,119 @@ function getStructuredServicesStatus(sandboxName = "default") {
     pidDir,
     platformNote: "Service scripts use bash and /tmp paths; best supported in Linux/WSL/macOS environments.",
     services,
+  };
+}
+
+function tailTextFile(filePath, maxLines = 20) {
+  if (!fs.existsSync(filePath)) return [];
+  const content = fs.readFileSync(filePath, "utf-8");
+  return content.split(/\r?\n/).slice(-maxLines);
+}
+
+function getServicesInspect(sandboxName = "default") {
+  const args = [path.join(ROOT, "scripts", "start-services.sh")];
+  if (sandboxName && sandboxName !== "default") args.push("--sandbox", sandboxName);
+  args.push("--status");
+  const statusCommand = runCommand("bash", args);
+  const structured = getStructuredServicesStatus(sandboxName);
+  return {
+    sandboxName,
+    statusCommand: wrapCommand("start-services --status", statusCommand),
+    structured,
+    services: structured.services.map((service) => {
+      const stat = service.logExists ? fs.statSync(service.logFile) : null;
+      return {
+        name: service.name,
+        running: service.running,
+        pid: service.pid,
+        pidFile: service.pidFile,
+        logFile: service.logFile,
+        logExists: service.logExists,
+        logSizeBytes: stat ? stat.size : 0,
+        logModifiedAt: stat ? stat.mtime.toISOString() : null,
+        publicUrl: service.publicUrl,
+        tail: service.logExists ? tailTextFile(service.logFile, 20) : [],
+      };
+    }),
+  };
+}
+
+function routePathToOpenApi(pathValue) {
+  return pathValue.replace(/:([A-Za-z0-9_]+)/g, "{$1}").replace(/\?.*$/, "");
+}
+
+function routeParametersFromPath(method, pathValue) {
+  const params = [];
+  const pathMatches = pathValue.match(/:([A-Za-z0-9_]+)/g) || [];
+  for (const match of pathMatches) {
+    params.push({
+      name: match.slice(1),
+      in: "path",
+      required: true,
+      schema: { type: "string" },
+    });
+  }
+  const queryPart = pathValue.includes("?") ? pathValue.split("?")[1] : "";
+  if (queryPart) {
+    for (const part of queryPart.split("&")) {
+      const [rawName, rawValue] = part.split("=");
+      if (!rawName) continue;
+      params.push({
+        name: rawName,
+        in: "query",
+        required: false,
+        schema: { type: "string", example: rawValue || "" },
+      });
+    }
+  }
+  if (["POST", "PUT", "PATCH"].includes(method)) {
+    return {
+      parameters: params,
+      requestBody: {
+        required: false,
+        content: {
+          "application/json": {
+            schema: { type: "object", additionalProperties: true },
+          },
+        },
+      },
+    };
+  }
+  return { parameters: params };
+}
+
+function getOpenApiDocument() {
+  const paths = {};
+  for (const [method, pathValue, description] of ROUTES) {
+    const openApiPath = routePathToOpenApi(pathValue);
+    if (!paths[openApiPath]) paths[openApiPath] = {};
+    const operation = {
+      summary: description,
+      operationId: `${method.toLowerCase()}_${openApiPath.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "")}`,
+      tags: [openApiPath.startsWith("/api/services") ? "services" : openApiPath.startsWith("/api/sandboxes") ? "sandboxes" : openApiPath.startsWith("/api/inference") ? "inference" : openApiPath.startsWith("/api/runtime") ? "runtime" : openApiPath.startsWith("/api/gateway") ? "gateway" : "general"],
+      responses: {
+        200: {
+          description: "Successful response",
+          content: {
+            "application/json": {
+              schema: { type: "object", additionalProperties: true },
+            },
+          },
+        },
+      },
+      ...routeParametersFromPath(method, pathValue),
+    };
+    paths[openApiPath][method.toLowerCase()] = operation;
+  }
+  return {
+    openapi: "3.1.0",
+    info: {
+      title: "NemoClaw Standalone API",
+      version: PACKAGE_JSON.version,
+      description: "Generated OpenAPI export for the standalone NemoClaw wrapper.",
+    },
+    servers: [{ url: `http://${HOST}:${PORT}` }],
+    paths,
   };
 }
 
@@ -1476,6 +1616,9 @@ async function handle(req, res, url) {
   if (req.method === "GET" && pathname === "/api/gateway/status") {
     return sendJson(res, 200, getGatewayStatus());
   }
+  if (req.method === "GET" && pathname === "/api/gateway/inspect") {
+    return sendJson(res, 200, getGatewayInspect());
+  }
   if (req.method === "GET" && pathname === "/api/openshell/diagnostics") {
     return sendJson(res, 200, getOpenshellDiagnostics());
   }
@@ -1487,6 +1630,9 @@ async function handle(req, res, url) {
   }
   if (req.method === "GET" && pathname === "/api/runtime/inference-config") {
     return sendJson(res, 200, getInferenceConfigSummary());
+  }
+  if (req.method === "GET" && pathname === "/api/openapi.json") {
+    return sendJson(res, 200, getOpenApiDocument());
   }
   if (req.method === "GET" && pathname === "/api/environment/summary") {
     return sendJson(res, 200, getEnvironmentSummary(url.searchParams));
@@ -1794,6 +1940,10 @@ async function handle(req, res, url) {
     args.push("--status");
     const result = runCommand("bash", args);
     return sendJson(res, result.ok ? 200 : 500, { sandboxName: sandboxName || "default", ...wrapCommand("start-services --status", result) });
+  }
+  if (req.method === "GET" && pathname === "/api/services/inspect") {
+    const sandboxName = String(url.searchParams.get("sandboxName") || "default").trim() || "default";
+    return sendJson(res, 200, getServicesInspect(sandboxName));
   }
   if (req.method === "GET" && pathname === "/api/services/structured-status") {
     const sandboxName = String(url.searchParams.get("sandboxName") || "default").trim() || "default";

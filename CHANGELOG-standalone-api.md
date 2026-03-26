@@ -13,11 +13,15 @@
 - `GET /api/runtime/platform` for platform and container runtime internals.
 - `GET /api/runtime/registry` for sandbox registry diagnostics.
 - `GET /api/runtime/inference-config` for resolved inference route defaults and provider mapping.
+- `GET /api/gateway/inspect` for deep named-gateway inspection.
+- `GET /api/services/inspect` for deep service state and log-tail inspection.
+- `GET /api/openapi.json` for generated OpenAPI 3.1 export.
 
 ### Changed
 - `GET /api/environment/summary` now includes `localInference` metadata.
 - `standalone-api/README.md` now documents deep diagnostic routes and response examples.
 - `standalone-api/postman/nemoclaw-standalone-api.postman_collection.json` now includes requests for deep diagnostics and preview APIs.
+- `standalone-api/README.md` now also documents gateway inspect, services inspect, and OpenAPI export.
 
 ### Fixed
 - Repaired the `handle()` router in `standalone-api/server.js` after malformed route insertion.

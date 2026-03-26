@@ -50,7 +50,7 @@ node standalone-api/server.js
 
 ## Nhóm API
 
-- Global: version, help, list, status, presets, preset entries, onboard options, command surface, OpenShell diagnostics, runtime internals, environment summary
+- Global: version, help, list, status, presets, preset entries, onboard options, command surface, OpenShell diagnostics, gateway inspect, runtime internals, OpenAPI export, environment summary
 - Install: đọc metadata bootstrap 1 lệnh, xem root install local/upstream, hoặc trigger install qua API
 - Onboard: chạy `nemoclaw onboard --non-interactive`
 - Setup: wrapper cho `nemoclaw setup` và `nemoclaw setup-spark`
@@ -70,9 +70,11 @@ node standalone-api/server.js
 - `GET /api/commands`
 - `GET /api/list`
 - `GET /api/openshell/diagnostics`
+- `GET /api/gateway/inspect`
 - `GET /api/runtime/platform`
 - `GET /api/runtime/registry`
 - `GET /api/runtime/inference-config`
+- `GET /api/openapi.json`
 - `GET /api/install`
 - `GET /api/install/script`
 - `POST /api/install/run`
@@ -110,6 +112,7 @@ node standalone-api/server.js
 - `GET /api/credentials`
 - `PUT /api/credentials/:key`
 - `GET /api/services/structured-status`
+- `GET /api/services/inspect?sandboxName=my-assistant`
 - `GET /api/services/logs/:service`
 
 ## Ví dụ response
@@ -137,6 +140,28 @@ node standalone-api/server.js
 	- `defaults.cloudModel`, `defaults.ollamaModel`, `defaults.routeProfile`
 	- `cloudModelOptions[]`
 	- `providers[]` với `selection` và `primaryModelPreview`
+
+### `GET /api/gateway/inspect`
+
+- Trả về chẩn đoán sâu cho gateway:
+	- `summary` từ `GET /api/gateway/status`
+	- `heuristics.activeGateway`, `heuristics.namedGatewayPresent`
+	- `heuristics.connectionRefused`, `heuristics.handshakeError`
+	- `heuristics.configuredInference`
+	- `raw.openshellStatus`, `raw.namedGatewayInfo`, `raw.inference`
+
+### `GET /api/services/inspect?sandboxName=my-assistant`
+
+- Trả về inspect sâu cho services:
+	- `statusCommand`
+	- `structured.services[]`
+	- `services[].logSizeBytes`, `services[].logModifiedAt`
+	- `services[].tail` để xem nhanh 20 dòng cuối log
+
+### `GET /api/openapi.json`
+
+- Trả về OpenAPI 3.1 được generate từ `ROUTES` hiện tại.
+- Hữu ích để import vào tool khác hoặc generate client/test tự động.
 
 ### `GET /api/sandboxes/:name/policy/preview-merge?preset=telegram`
 
