@@ -30,6 +30,49 @@
         { "name": "Port Preflight", "request": { "method": "GET", "url": "{{baseUrl}}/api/preflight/port?port=18789" } },
         { "name": "Live Inference", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference" } },
         { "name": "Inference Providers", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/providers" } },
+        { "name": "NVIDIA Remote Models", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/models/nvidia" } },
+        {
+          "name": "OpenAI-Compatible Models",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"openai-api\"\n}"
+            },
+            "url": "{{baseUrl}}/api/inference/models/openai-compatible"
+          }
+        },
+        {
+          "name": "Anthropic-Compatible Models",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"anthropic-prod\"\n}"
+            },
+            "url": "{{baseUrl}}/api/inference/models/anthropic-compatible"
+          }
+        },
+        {
+          "name": "Validate Remote Provider Model",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"nvidia-prod\",\n  \"model\": \"nvidia/nemotron-3-super-120b-a12b\"\n}"
+            },
+            "url": "{{baseUrl}}/api/inference/remote/validate"
+          }
+        },
         { "name": "NIM GPU Info", "request": { "method": "GET", "url": "{{baseUrl}}/api/nim/gpu" } },
         { "name": "Ollama Models", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/ollama/models" } },
         { "name": "Default Local Model", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/default-model" } },

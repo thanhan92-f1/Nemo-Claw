@@ -49,6 +49,10 @@ const PROVIDERS = [
 ];
 
 const DEFAULT_FORWARD_PORT = Number(process.env.DASHBOARD_PORT || 18789);
+const NVIDIA_BUILD_ENDPOINT_URL = "https://integrate.api.nvidia.com/v1";
+const OPENAI_ENDPOINT_URL = "https://api.openai.com/v1";
+const ANTHROPIC_ENDPOINT_URL = "https://api.anthropic.com";
+const GEMINI_ENDPOINT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
 
 const CREDENTIAL_KEYS = [
   "NVIDIA_API_KEY",
@@ -124,6 +128,10 @@ const ROUTES = [
   ["GET", "/api/sandboxes/:name/ui", "UI + terminal links"],
   ["GET", "/api/inference", "Live inference status"],
   ["GET", "/api/inference/providers", "Inference provider metadata"],
+  ["GET", "/api/inference/models/nvidia", "List NVIDIA endpoint models"],
+  ["POST", "/api/inference/models/openai-compatible", "List OpenAI-compatible endpoint models"],
+  ["POST", "/api/inference/models/anthropic-compatible", "List Anthropic-compatible endpoint models"],
+  ["POST", "/api/inference/remote/validate", "Validate remote provider model"],
   ["GET", "/api/inference/local/ollama/models", "Local Ollama models"],
   ["GET", "/api/inference/local/default-model", "Recommended local Ollama model"],
   ["GET", "/api/inference/local/bootstrap-options", "Local bootstrap model options"],
@@ -283,6 +291,181 @@ function getInferenceInfo() {
 
 function stripAnsi(value = "") {
   return String(value).replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function summarizeRemoteError(body, status) {
+  if (!body) return `HTTP ${status} with no response body`;
+  try {
+    const parsed = JSON.parse(body);
+    const message = parsed?.error?.message || parsed?.error?.details || parsed?.message || parsed?.detail || parsed?.details;
+    if (message) return `HTTP ${status}: ${String(message)}`;
+  } catch {}
+  const compact = String(body).replace(/\s+/g, " ").trim();
+  return `HTTP ${status}: ${compact.slice(0, 200)}`;
+}
+
+function getRemoteProviderConfig(provider, endpointUrl = "") {
+  switch (provider) {
+    case "nvidia-prod":
+    case "nvidia-nim":
+      return { provider, label: "NVIDIA Endpoints", type: "nvidia", credentialEnv: "NVIDIA_API_KEY", endpointUrl: NVIDIA_BUILD_ENDPOINT_URL };
+    case "openai-api":
+      return { provider, label: "OpenAI", type: "openai", credentialEnv: "OPENAI_API_KEY", endpointUrl: OPENAI_ENDPOINT_URL };
+    case "compatible-endpoint":
+      return { provider, label: "Other OpenAI-compatible endpoint", type: "openai", credentialEnv: "COMPATIBLE_API_KEY", endpointUrl: String(endpointUrl || "").trim() };
+    case "gemini-api":
+      return { provider, label: "Google Gemini", type: "openai", credentialEnv: "GEMINI_API_KEY", endpointUrl: GEMINI_ENDPOINT_URL };
+    case "anthropic-prod":
+      return { provider, label: "Anthropic", type: "anthropic", credentialEnv: "ANTHROPIC_API_KEY", endpointUrl: ANTHROPIC_ENDPOINT_URL };
+    case "compatible-anthropic-endpoint":
+      return { provider, label: "Other Anthropic-compatible endpoint", type: "anthropic", credentialEnv: "COMPATIBLE_ANTHROPIC_API_KEY", endpointUrl: String(endpointUrl || "").trim() };
+    default:
+      return null;
+  }
+}
+
+function getRemoteApiKey(body, fallbackCredentialEnv) {
+  if (body.apiKey) return String(body.apiKey);
+  const credentialKey = String(body.credentialKey || fallbackCredentialEnv || "").trim();
+  return credentialKey ? String(credentials.getCredential(credentialKey) || "") : "";
+}
+
+async function fetchJsonWithMetadata(url, options = {}) {
+  try {
+    const response = await fetch(url, {
+      method: options.method || "GET",
+      headers: options.headers || {},
+      body: options.body,
+      signal: AbortSignal.timeout(options.timeoutMs || 15000),
+    });
+    const text = await response.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch {}
+    return {
+      ok: response.ok,
+      status: response.status,
+      text,
+      data,
+      message: response.ok ? null : summarizeRemoteError(text, response.status),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      text: "",
+      data: null,
+      message: error.message || String(error),
+    };
+  }
+}
+
+async function fetchNvidiaModels(apiKey) {
+  if (!apiKey) return { ok: false, status: 401, message: "NVIDIA_API_KEY is required to list NVIDIA endpoint models", ids: [] };
+  const result = await fetchJsonWithMetadata(`${NVIDIA_BUILD_ENDPOINT_URL}/models`, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+  const ids = Array.isArray(result.data?.data) ? result.data.data.map((item) => item && item.id).filter(Boolean) : [];
+  return { ...result, ids };
+}
+
+async function fetchOpenAiCompatibleModels(endpointUrl, apiKey) {
+  const trimmed = String(endpointUrl || "").replace(/\/+$/, "");
+  if (!trimmed) return { ok: false, status: 400, message: "endpointUrl is required", ids: [] };
+  const headers = {};
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const result = await fetchJsonWithMetadata(`${trimmed}/models`, { headers });
+  const ids = Array.isArray(result.data?.data) ? result.data.data.map((item) => item && item.id).filter(Boolean) : [];
+  return { ...result, ids, endpointUrl: trimmed };
+}
+
+async function fetchAnthropicCompatibleModels(endpointUrl, apiKey) {
+  const trimmed = String(endpointUrl || "").replace(/\/+$/, "");
+  if (!trimmed) return { ok: false, status: 400, message: "endpointUrl is required", ids: [] };
+  if (!apiKey) return { ok: false, status: 401, message: "API key is required", ids: [] };
+  const result = await fetchJsonWithMetadata(`${trimmed}/v1/models`, {
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+  });
+  const ids = Array.isArray(result.data?.data) ? result.data.data.map((item) => item && (item.id || item.name)).filter(Boolean) : [];
+  return { ...result, ids, endpointUrl: trimmed };
+}
+
+async function validateRemoteProviderModel(body = {}) {
+  const provider = String(body.provider || "").trim();
+  const model = String(body.model || "").trim();
+  const config = getRemoteProviderConfig(provider, body.endpointUrl);
+  if (!config) return { statusCode: 400, payload: { error: "Unsupported provider", provider, allowedProviders: PROVIDERS } };
+  if (!model) return { statusCode: 400, payload: { error: "model is required", provider } };
+
+  const apiKey = getRemoteApiKey(body, config.credentialEnv);
+  if (config.type === "nvidia") {
+    const available = await fetchNvidiaModels(apiKey);
+    if (!available.ok) {
+      return { statusCode: available.status || 502, payload: { provider, model, endpointUrl: config.endpointUrl, check: { ok: false, message: available.message }, request: maskSecrets(body) } };
+    }
+    const validated = available.ids.includes(model);
+    return {
+      statusCode: validated ? 200 : 409,
+      payload: {
+        provider,
+        providerLabel: config.label,
+        model,
+        endpointUrl: config.endpointUrl,
+        check: validated ? { ok: true, validated: true } : { ok: false, validated: true, message: `Model '${model}' is not available from ${config.label}.` },
+        availableModelCount: available.ids.length,
+        request: maskSecrets(body),
+      },
+    };
+  }
+
+  if (config.type === "openai") {
+    const available = await fetchOpenAiCompatibleModels(config.endpointUrl, apiKey);
+    if (!available.ok) {
+      if ([404, 405].includes(available.status)) {
+        return { statusCode: 200, payload: { provider, providerLabel: config.label, model, endpointUrl: config.endpointUrl, check: { ok: true, validated: false, message: "Endpoint does not expose /models for validation." }, request: maskSecrets(body) } };
+      }
+      return { statusCode: available.status || 502, payload: { provider, model, endpointUrl: config.endpointUrl, check: { ok: false, message: available.message }, request: maskSecrets(body) } };
+    }
+    const validated = available.ids.includes(model);
+    return {
+      statusCode: validated ? 200 : 409,
+      payload: {
+        provider,
+        providerLabel: config.label,
+        model,
+        endpointUrl: config.endpointUrl,
+        check: validated ? { ok: true, validated: true } : { ok: false, validated: true, message: `Model '${model}' is not available from ${config.label}.` },
+        availableModelCount: available.ids.length,
+        request: maskSecrets(body),
+      },
+    };
+  }
+
+  const available = await fetchAnthropicCompatibleModels(config.endpointUrl, apiKey);
+  if (!available.ok) {
+    if ([404, 405].includes(available.status)) {
+      return { statusCode: 200, payload: { provider, providerLabel: config.label, model, endpointUrl: config.endpointUrl, check: { ok: true, validated: false, message: "Endpoint does not expose /v1/models for validation." }, request: maskSecrets(body) } };
+    }
+    return { statusCode: available.status || 502, payload: { provider, model, endpointUrl: config.endpointUrl, check: { ok: false, message: available.message }, request: maskSecrets(body) } };
+  }
+  const validated = available.ids.includes(model);
+  return {
+    statusCode: validated ? 200 : 409,
+    payload: {
+      provider,
+      providerLabel: config.label,
+      model,
+      endpointUrl: config.endpointUrl,
+      check: validated ? { ok: true, validated: true } : { ok: false, validated: true, message: `Model '${model}' is not available from ${config.label}.` },
+      availableModelCount: available.ids.length,
+      request: maskSecrets(body),
+    },
+  };
 }
 
 function getSandboxDetails(name) {
@@ -1027,6 +1210,65 @@ async function handle(req, res, url) {
       },
       nimModels: nim.listModels(),
     });
+  }
+  if (req.method === "GET" && pathname === "/api/inference/models/nvidia") {
+    const apiKey = getRemoteApiKey({}, "NVIDIA_API_KEY");
+    const result = await fetchNvidiaModels(apiKey);
+    return sendJson(res, result.ok ? 200 : (result.status || 502), {
+      provider: "nvidia-prod",
+      providerLabel: "NVIDIA Endpoints",
+      endpointUrl: NVIDIA_BUILD_ENDPOINT_URL,
+      credentialKey: "NVIDIA_API_KEY",
+      ok: result.ok,
+      count: result.ids.length,
+      ids: result.ids,
+      message: result.message,
+    });
+  }
+  if (req.method === "POST" && pathname === "/api/inference/models/openai-compatible") {
+    const body = await readBody(req);
+    const provider = String(body.provider || "compatible-endpoint").trim();
+    const config = getRemoteProviderConfig(provider, body.endpointUrl);
+    if (!config || config.type !== "openai") {
+      return sendJson(res, 400, { error: "provider must be one of openai-api, gemini-api, compatible-endpoint", provider });
+    }
+    const result = await fetchOpenAiCompatibleModels(config.endpointUrl, getRemoteApiKey(body, config.credentialEnv));
+    return sendJson(res, result.ok ? 200 : (result.status || 502), {
+      provider,
+      providerLabel: config.label,
+      endpointUrl: config.endpointUrl,
+      credentialKey: config.credentialEnv,
+      ok: result.ok,
+      count: result.ids.length,
+      ids: result.ids,
+      message: result.message,
+      request: maskSecrets(body),
+    });
+  }
+  if (req.method === "POST" && pathname === "/api/inference/models/anthropic-compatible") {
+    const body = await readBody(req);
+    const provider = String(body.provider || "compatible-anthropic-endpoint").trim();
+    const config = getRemoteProviderConfig(provider, body.endpointUrl);
+    if (!config || config.type !== "anthropic") {
+      return sendJson(res, 400, { error: "provider must be one of anthropic-prod, compatible-anthropic-endpoint", provider });
+    }
+    const result = await fetchAnthropicCompatibleModels(config.endpointUrl, getRemoteApiKey(body, config.credentialEnv));
+    return sendJson(res, result.ok ? 200 : (result.status || 502), {
+      provider,
+      providerLabel: config.label,
+      endpointUrl: config.endpointUrl,
+      credentialKey: config.credentialEnv,
+      ok: result.ok,
+      count: result.ids.length,
+      ids: result.ids,
+      message: result.message,
+      request: maskSecrets(body),
+    });
+  }
+  if (req.method === "POST" && pathname === "/api/inference/remote/validate") {
+    const body = await readBody(req);
+    const result = await validateRemoteProviderModel(body);
+    return sendJson(res, result.statusCode, result.payload);
   }
   if (req.method === "GET" && pathname === "/api/inference/local/ollama/models") {
     const models = localInference.getOllamaModelOptions((command, options = {}) => runCommand("bash", ["-lc", command], options).stdout);
