@@ -16,8 +16,10 @@
         { "name": "Help", "request": { "method": "GET", "url": "{{baseUrl}}/api/help" } },
         { "name": "CLI List", "request": { "method": "GET", "url": "{{baseUrl}}/api/list" } },
         { "name": "Global Status", "request": { "method": "GET", "url": "{{baseUrl}}/api/status" } },
+        { "name": "OpenShell Diagnostics", "request": { "method": "GET", "url": "{{baseUrl}}/api/openshell/diagnostics" } },
         { "name": "Environment Summary", "request": { "method": "GET", "url": "{{baseUrl}}/api/environment/summary?ports=18789,3100" } },
         { "name": "Policy Presets", "request": { "method": "GET", "url": "{{baseUrl}}/api/presets" } },
+        { "name": "Preset Entries", "request": { "method": "GET", "url": "{{baseUrl}}/api/presets/{{presetName}}/entries" } },
         { "name": "Onboard Options", "request": { "method": "GET", "url": "{{baseUrl}}/api/onboard/options" } },
         { "name": "One-Command Bootstrap Metadata", "request": { "method": "GET", "url": "{{baseUrl}}/api/install" } },
         { "name": "One-Command Bootstrap Script Info", "request": { "method": "GET", "url": "{{baseUrl}}/api/install/script" } }
@@ -28,8 +30,11 @@
       "item": [
         { "name": "Gateway Status", "request": { "method": "GET", "url": "{{baseUrl}}/api/gateway/status" } },
         { "name": "Port Preflight", "request": { "method": "GET", "url": "{{baseUrl}}/api/preflight/port?port=18789" } },
+        { "name": "Batch Port Preflight", "request": { "method": "GET", "url": "{{baseUrl}}/api/preflight/ports?ports=18789,3100" } },
         { "name": "Live Inference", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference" } },
         { "name": "Inference Providers", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/providers" } },
+        { "name": "Local Provider Catalog", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/providers" } },
+        { "name": "Local Provider Diagnostics", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/providers/ollama-local/diagnostics?model=nemotron-3-nano:30b" } },
         { "name": "NVIDIA Remote Models", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/models/nvidia" } },
         {
           "name": "OpenAI-Compatible Models",
@@ -74,6 +79,7 @@
           }
         },
         { "name": "NIM GPU Info", "request": { "method": "GET", "url": "{{baseUrl}}/api/nim/gpu" } },
+        { "name": "NIM Compatible Models", "request": { "method": "GET", "url": "{{baseUrl}}/api/nim/models/compatible" } },
         { "name": "Ollama Models", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/ollama/models" } },
         { "name": "Default Local Model", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/default-model" } },
         { "name": "Bootstrap Options", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/bootstrap-options" } },
@@ -117,6 +123,7 @@
       "name": "Policy Details",
       "item": [
         { "name": "Preset Detail", "request": { "method": "GET", "url": "{{baseUrl}}/api/presets/{{presetName}}" } },
+        { "name": "Preset Entries", "request": { "method": "GET", "url": "{{baseUrl}}/api/presets/{{presetName}}/entries" } },
         { "name": "Preset Endpoints", "request": { "method": "GET", "url": "{{baseUrl}}/api/presets/{{presetName}}/endpoints" } }
       ]
     },
@@ -232,6 +239,7 @@
         { "name": "Sandbox Policies", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/policies" } },
         { "name": "Raw Sandbox Policy", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/policy/raw" } },
         { "name": "Sandbox Policy Endpoints", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/policy/endpoints" } },
+        { "name": "Sandbox Policy Preview Merge", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/policy/preview-merge?preset={{presetName}}" } },
         {
           "name": "Apply Policy",
           "request": {

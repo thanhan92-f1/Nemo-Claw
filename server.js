@@ -53,6 +53,7 @@ const NVIDIA_BUILD_ENDPOINT_URL = "https://integrate.api.nvidia.com/v1";
 const OPENAI_ENDPOINT_URL = "https://api.openai.com/v1";
 const ANTHROPIC_ENDPOINT_URL = "https://api.anthropic.com";
 const GEMINI_ENDPOINT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
+const LOCAL_INFERENCE_PROVIDERS = ["ollama-local", "vllm-local"];
 
 const CREDENTIAL_KEYS = [
   "NVIDIA_API_KEY",
@@ -122,6 +123,7 @@ const ROUTES = [
   ["GET", "/api/sandboxes/:name/policies", "Sandbox policies"],
   ["GET", "/api/sandboxes/:name/policy/raw", "Raw live sandbox policy"],
   ["GET", "/api/sandboxes/:name/policy/endpoints", "Extract live sandbox policy endpoints"],
+  ["GET", "/api/sandboxes/:name/policy/preview-merge?preset=name", "Preview merged policy for preset application"],
   ["POST", "/api/sandboxes/:name/policies", "Apply policy preset"],
   ["POST", "/api/sandboxes/:name/policy-add", "CLI policy-add alias"],
   ["DELETE", "/api/sandboxes/:name", "Destroy sandbox"],
@@ -132,19 +134,25 @@ const ROUTES = [
   ["POST", "/api/inference/models/openai-compatible", "List OpenAI-compatible endpoint models"],
   ["POST", "/api/inference/models/anthropic-compatible", "List Anthropic-compatible endpoint models"],
   ["POST", "/api/inference/remote/validate", "Validate remote provider model"],
+  ["GET", "/api/inference/local/providers", "Local inference provider metadata"],
+  ["GET", "/api/inference/local/providers/:provider/diagnostics", "Local inference provider diagnostics"],
   ["GET", "/api/inference/local/ollama/models", "Local Ollama models"],
   ["GET", "/api/inference/local/default-model", "Recommended local Ollama model"],
   ["GET", "/api/inference/local/bootstrap-options", "Local bootstrap model options"],
   ["POST", "/api/inference/local/validate", "Validate local inference provider or model"],
   ["GET", "/api/gateway/status", "Named gateway status"],
+  ["GET", "/api/openshell/diagnostics", "OpenShell and container runtime diagnostics"],
   ["GET", "/api/environment/summary", "Local runtime and environment summary"],
   ["GET", "/api/preflight/port?port=18789", "Port availability preflight"],
+  ["GET", "/api/preflight/ports?ports=18789,3100", "Batch port availability preflight"],
   ["POST", "/api/onboard/preview", "Preview non-interactive onboard config"],
   ["GET", "/api/presets/:name", "Preset detail"],
   ["GET", "/api/presets/:name/endpoints", "Preset host endpoints"],
+  ["GET", "/api/presets/:name/entries", "Preset network policy entries"],
   ["GET", "/api/credentials", "Credential summary"],
   ["PUT", "/api/credentials/:key", "Save credential"],
   ["GET", "/api/nim/gpu", "GPU and NIM model support"],
+  ["GET", "/api/nim/models/compatible", "NIM model compatibility for current host"],
   ["GET", "/api/services/status", "Services status"],
   ["GET", "/api/services/structured-status", "Structured services status"],
   ["GET", "/api/services/logs/:service", "Read service log file"],
@@ -738,6 +746,190 @@ async function getPortPreflight(port) {
   return { port: safePort, ...result };
 }
 
+async function getBatchPortPreflight(values) {
+  const ports = Array.from(new Set(
+    String(values || `${DEFAULT_FORWARD_PORT}`)
+      .split(",")
+      .map((value) => Number(String(value).trim()))
+      .filter((value) => Number.isInteger(value) && value > 0 && value <= 65535)
+  ));
+  const checks = await Promise.all(ports.map((port) => getPortPreflight(port)));
+  return {
+    ok: checks.every((item) => item.ok),
+    count: checks.length,
+    conflictCount: checks.filter((item) => item.ok === false).length,
+    ports: checks,
+  };
+}
+
+function getOpenshellDiagnostics() {
+  const dockerHost = platformInfo.detectDockerHost();
+  const dockerVersion = runCommand("docker", ["version", "--format", "{{json .}}"]);
+  const openshellVersion = onboard.getInstalledOpenshellVersion();
+  return {
+    openshell: {
+      resolvedBinary: openshellBinary,
+      version: openshellVersion,
+      stableGatewayImageRef: onboard.getStableGatewayImageRef(),
+    },
+    docker: {
+      detectedHost: dockerHost,
+      socketCandidates: platformInfo.getDockerSocketCandidates ? platformInfo.getDockerSocketCandidates() : [],
+      runtime: platformInfo.inferContainerRuntime(`${dockerVersion.stdout}${dockerVersion.stderr}`),
+      versionCommand: wrapCommand("docker version --format {{json .}}", dockerVersion),
+    },
+    platform: {
+      platform: process.platform,
+      arch: process.arch,
+      isWsl: platformInfo.isWsl(),
+      shouldPatchCoredns: platformInfo.shouldPatchCoredns(platformInfo.inferContainerRuntime(`${dockerVersion.stdout}${dockerVersion.stderr}`)),
+    },
+  };
+}
+
+function getLocalInferenceProviders() {
+  const gpu = nim.detectGpu();
+  return {
+    providers: LOCAL_INFERENCE_PROVIDERS.map((provider) => ({
+      provider,
+      baseUrl: localInference.getLocalProviderBaseUrl(provider),
+      validationBaseUrl: localInference.getLocalProviderValidationBaseUrl(provider),
+      healthCheck: localInference.getLocalProviderHealthCheck(provider),
+      containerReachabilityCheck: localInference.getLocalProviderContainerReachabilityCheck(provider),
+      defaultModel: provider === "ollama-local" ? localInference.getDefaultOllamaModel((command, options = {}) => runCommand("bash", ["-lc", command], options).stdout, gpu) : null,
+    })),
+  };
+}
+
+function getLocalProviderDiagnostics(provider, model = "") {
+  if (!LOCAL_INFERENCE_PROVIDERS.includes(provider)) {
+    return { statusCode: 400, payload: { error: "Unsupported local provider", provider, allowedProviders: LOCAL_INFERENCE_PROVIDERS } };
+  }
+  const runner = (command, options = {}) => {
+    const result = runCommand("bash", ["-lc", command], options);
+    return `${result.stdout}${result.stderr}`.trim();
+  };
+  const providerCheck = localInference.validateLocalProvider(provider, runner);
+  const modelCheck = provider === "ollama-local" && model ? localInference.validateOllamaModel(model, runner) : { ok: true };
+  return {
+    statusCode: providerCheck.ok && modelCheck.ok ? 200 : 409,
+    payload: {
+      provider,
+      model: model || null,
+      expected: {
+        baseUrl: localInference.getLocalProviderBaseUrl(provider),
+        validationBaseUrl: localInference.getLocalProviderValidationBaseUrl(provider),
+      },
+      commands: {
+        healthCheck: localInference.getLocalProviderHealthCheck(provider),
+        containerReachabilityCheck: localInference.getLocalProviderContainerReachabilityCheck(provider),
+        probeCommand: provider === "ollama-local" && model ? localInference.getOllamaProbeCommand(model) : null,
+      },
+      providerCheck,
+      modelCheck,
+    },
+  };
+}
+
+function getPresetEntries(name) {
+  const content = policies.loadPreset(name);
+  if (!content) return null;
+  const entries = policies.extractPresetEntries(content);
+  return {
+    name,
+    entries,
+    endpoints: policies.getPresetEndpoints(entries || ""),
+  };
+}
+
+function getNimCompatibility() {
+  const gpu = nim.detectGpu();
+  const models = nim.listModels();
+  const compatible = [];
+  const incompatible = [];
+  for (const model of models) {
+    const image = nim.getImageForModel(model.name);
+    if (gpu?.nimCapable && Number(gpu.totalMemoryMB || 0) >= Number(model.minGpuMemoryMB || 0)) {
+      compatible.push({ ...model, image });
+    } else {
+      incompatible.push({
+        ...model,
+        image,
+        reason: !gpu
+          ? "No supported GPU detected"
+          : !gpu.nimCapable
+            ? "Detected GPU/runtime is not NIM-capable"
+            : "requires more GPU memory than detected",
+      });
+    }
+  }
+  return {
+    gpu,
+    compatible,
+    incompatible,
+  };
+}
+
+function getPolicyPreviewMerge(sandboxName, presetName) {
+  const presetContent = policies.loadPreset(presetName);
+  if (!presetContent) return null;
+  const presetEntries = policies.extractPresetEntries(presetContent) || "";
+  const current = getPolicyRaw(sandboxName);
+  let currentPolicy = current.parsedPolicy || "";
+  let merged = "";
+  if (currentPolicy && currentPolicy.includes("network_policies:")) {
+    const lines = currentPolicy.split("\n");
+    const result = [];
+    let inNetworkPolicies = false;
+    let inserted = false;
+    for (const line of lines) {
+      const isTopLevel = /^\S.*:/.test(line);
+      if (line.trim() === "network_policies:" || line.trim().startsWith("network_policies:")) {
+        inNetworkPolicies = true;
+        result.push(line);
+        continue;
+      }
+      if (inNetworkPolicies && isTopLevel && !inserted) {
+        result.push(presetEntries);
+        inserted = true;
+        inNetworkPolicies = false;
+      }
+      result.push(line);
+    }
+    if (inNetworkPolicies && !inserted) result.push(presetEntries);
+    merged = result.join("\n");
+  } else if (currentPolicy) {
+    if (!currentPolicy.includes("version:")) currentPolicy = `version: 1\n${currentPolicy}`;
+    merged = `${currentPolicy}\n\nnetwork_policies:\n${presetEntries}`;
+  } else {
+    merged = `version: 1\n\nnetwork_policies:\n${presetEntries}`;
+  }
+  const currentEndpoints = policies.getPresetEndpoints(current.parsedPolicy || "");
+  const presetEndpoints = policies.getPresetEndpoints(presetEntries || "");
+  const mergedEndpoints = policies.getPresetEndpoints(merged || "");
+  return {
+    sandboxName,
+    presetName,
+    current: {
+      endpointCount: currentEndpoints.length,
+      endpoints: currentEndpoints,
+    },
+    preset: {
+      endpointCount: presetEndpoints.length,
+      endpoints: presetEndpoints,
+      entries: presetEntries,
+    },
+    merged: {
+      endpointCount: mergedEndpoints.length,
+      endpoints: mergedEndpoints,
+      newEndpoints: mergedEndpoints.filter((value) => !currentEndpoints.includes(value)),
+      alreadyPresentEndpoints: presetEndpoints.filter((value) => currentEndpoints.includes(value)),
+      policyYaml: merged,
+    },
+    command: current.command,
+  };
+}
+
 function getEnvironmentSummary(query) {
   const docker = platformInfo.detectDockerHost();
   const dockerVersion = runCommand("docker", ["version", "--format", "{{json .}}"]);
@@ -759,6 +951,7 @@ function getEnvironmentSummary(query) {
     gpu: nim.detectGpu(),
     gateway: getGatewayStatus(),
     ports: portValues,
+    localInference: getLocalInferenceProviders(),
   };
 }
 
@@ -1084,6 +1277,7 @@ runBtn.onclick=async()=>{runBtn.disabled=true;output.textContent='Running...';tr
 
 async function handle(req, res, url) {
   const pathname = url.pathname;
+  let match;
 
   if (req.method === "GET" && pathname === "/") return sendHtml(res, 200, homePage());
   if (req.method === "GET" && pathname === "/chat") return sendHtml(res, 200, chatPage(url.searchParams));
@@ -1110,6 +1304,7 @@ async function handle(req, res, url) {
     const result = runNemoclaw(["status"]);
     return sendJson(res, result.ok ? 200 : 500, { ...wrapCommand("nemoclaw status", result), registry: registry.listSandboxes() });
   }
+
   if (req.method === "GET" && pathname === "/api/presets") return sendJson(res, 200, { presets: policies.listPresets() });
   match = pathname.match(/^\/api\/presets\/([^/]+)$/);
   if (req.method === "GET" && match) {
@@ -1125,6 +1320,14 @@ async function handle(req, res, url) {
     if (!detail) return sendJson(res, 404, { error: `Preset '${presetName}' not found` });
     return sendJson(res, 200, { name: presetName, endpoints: detail.endpoints });
   }
+  match = pathname.match(/^\/api\/presets\/([^/]+)\/entries$/);
+  if (req.method === "GET" && match) {
+    const presetName = decodeURIComponent(match[1]);
+    const detail = getPresetEntries(presetName);
+    if (!detail) return sendJson(res, 404, { error: `Preset '${presetName}' not found` });
+    return sendJson(res, 200, detail);
+  }
+
   if (req.method === "GET" && pathname === "/api/install") {
     return sendJson(res, 200, summarizeInstallScript());
   }
@@ -1151,6 +1354,7 @@ async function handle(req, res, url) {
       return sendJson(res, 500, { error: error.message, ...summarizeInstallScript() });
     }
   }
+
   if (req.method === "GET" && pathname === "/api/onboard/options") {
     return sendJson(res, 200, {
       providers: PROVIDERS,
@@ -1184,6 +1388,9 @@ async function handle(req, res, url) {
   if (req.method === "GET" && pathname === "/api/gateway/status") {
     return sendJson(res, 200, getGatewayStatus());
   }
+  if (req.method === "GET" && pathname === "/api/openshell/diagnostics") {
+    return sendJson(res, 200, getOpenshellDiagnostics());
+  }
   if (req.method === "GET" && pathname === "/api/environment/summary") {
     return sendJson(res, 200, getEnvironmentSummary(url.searchParams));
   }
@@ -1191,10 +1398,15 @@ async function handle(req, res, url) {
     const payload = await getPortPreflight(url.searchParams.get("port"));
     return sendJson(res, payload.ok ? 200 : 409, payload);
   }
+  if (req.method === "GET" && pathname === "/api/preflight/ports") {
+    const payload = await getBatchPortPreflight(url.searchParams.get("ports"));
+    return sendJson(res, payload.ok ? 200 : 409, payload);
+  }
   if (req.method === "POST" && pathname === "/api/onboard/preview") {
     const body = await readBody(req);
     return sendJson(res, 200, getOnboardPreview(body));
   }
+
   if (req.method === "GET" && pathname === "/api/inference") {
     return sendJson(res, 200, getInferenceInfo());
   }
@@ -1270,6 +1482,15 @@ async function handle(req, res, url) {
     const result = await validateRemoteProviderModel(body);
     return sendJson(res, result.statusCode, result.payload);
   }
+  if (req.method === "GET" && pathname === "/api/inference/local/providers") {
+    return sendJson(res, 200, getLocalInferenceProviders());
+  }
+  match = pathname.match(/^\/api\/inference\/local\/providers\/([^/]+)\/diagnostics$/);
+  if (req.method === "GET" && match) {
+    const provider = decodeURIComponent(match[1]);
+    const result = getLocalProviderDiagnostics(provider, String(url.searchParams.get("model") || ""));
+    return sendJson(res, result.statusCode, result.payload);
+  }
   if (req.method === "GET" && pathname === "/api/inference/local/ollama/models") {
     const models = localInference.getOllamaModelOptions((command, options = {}) => runCommand("bash", ["-lc", command], options).stdout);
     return sendJson(res, 200, { models });
@@ -1320,7 +1541,7 @@ async function handle(req, res, url) {
     return sendJson(res, success ? 200 : 404, { success, defaultSandbox: registry.getDefault(), name });
   }
 
-  let match = pathname.match(/^\/api\/sandboxes\/([^/]+)$/);
+  match = pathname.match(/^\/api\/sandboxes\/([^/]+)$/);
   if (req.method === "GET" && match) {
     const sandboxName = normalizeSandboxName(decodeURIComponent(match[1]));
     const details = getSandboxDetails(sandboxName);
@@ -1413,6 +1634,16 @@ async function handle(req, res, url) {
     const sandboxName = normalizeSandboxName(decodeURIComponent(match[1]));
     return sendJson(res, 200, getPolicyEndpoints(sandboxName));
   }
+  match = pathname.match(/^\/api\/sandboxes\/([^/]+)\/policy\/preview-merge$/);
+  if (req.method === "GET" && match) {
+    const sandboxName = normalizeSandboxName(decodeURIComponent(match[1]));
+    const presetName = String(url.searchParams.get("preset") || "").trim();
+    if (!presetName) return sendJson(res, 400, { error: "preset query parameter is required", sandboxName });
+    const preview = getPolicyPreviewMerge(sandboxName, presetName);
+    if (!preview) return sendJson(res, 404, { error: `Preset '${presetName}' not found`, sandboxName, presetName });
+    return sendJson(res, 200, preview);
+  }
+  match = pathname.match(/^\/api\/sandboxes\/([^/]+)\/policies$/);
   if (req.method === "POST" && match) {
     const sandboxName = normalizeSandboxName(decodeURIComponent(match[1]));
     const body = await readBody(req);
@@ -1514,6 +1745,9 @@ async function handle(req, res, url) {
 
   if (req.method === "GET" && pathname === "/api/nim/gpu") {
     return sendJson(res, 200, getNimGpuInfo());
+  }
+  if (req.method === "GET" && pathname === "/api/nim/models/compatible") {
+    return sendJson(res, 200, getNimCompatibility());
   }
 
   if (req.method === "POST" && pathname === "/api/deployments") {

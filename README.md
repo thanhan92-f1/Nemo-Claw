@@ -50,14 +50,14 @@ node standalone-api/server.js
 
 ## Nhóm API
 
-- Global: version, help, list, status, presets, onboard options, command surface
+- Global: version, help, list, status, presets, preset entries, onboard options, command surface, OpenShell diagnostics, environment summary
 - Install: đọc metadata bootstrap 1 lệnh, xem root install local/upstream, hoặc trigger install qua API
 - Onboard: chạy `nemoclaw onboard --non-interactive`
 - Setup: wrapper cho `nemoclaw setup` và `nemoclaw setup-spark`
-- Sandboxes: list, details, default sandbox, status, structured status, gateway state, readiness, NIM details, connect, logs, policies, raw policy, policy-add, destroy, ui links
-- Inference: gateway status, live inference info, provider metadata, Ollama model options, bootstrap options, local provider validation, NIM GPU info, port preflight
+- Sandboxes: list, details, default sandbox, status, structured status, gateway state, readiness, NIM details, connect, logs, policies, raw policy, policy endpoints, policy preview merge, policy-add, destroy, ui links
+- Inference: gateway status, live inference info, provider metadata, local provider catalog, provider diagnostics, Ollama model options, bootstrap options, local provider validation, NIM GPU info, NIM compatible models, port preflight
 - Credentials: xem summary credential và lưu key qua API
-- Policy details: xem chi tiết preset và endpoints của preset
+- Policy details: xem chi tiết preset, preset entries và endpoints của preset
 - Services: start, stop, raw status, structured status, per-service logs, alias `nemoclaw start/stop`
 - Deployments: wrapper cho `nemoclaw deploy`
 - Debug: wrapper cho `nemoclaw debug`
@@ -69,6 +69,7 @@ node standalone-api/server.js
 
 - `GET /api/commands`
 - `GET /api/list`
+- `GET /api/openshell/diagnostics`
 - `GET /api/install`
 - `GET /api/install/script`
 - `POST /api/install/run`
@@ -78,6 +79,7 @@ node standalone-api/server.js
 - `POST /api/stop`
 - `GET /api/gateway/status`
 - `GET /api/preflight/port?port=18789`
+- `GET /api/preflight/ports?ports=18789,3100`
 - `POST /api/onboard/preview`
 - `GET /api/sandboxes/default`
 - `PUT /api/sandboxes/default`
@@ -86,14 +88,21 @@ node standalone-api/server.js
 - `GET /api/sandboxes/:name/readiness`
 - `GET /api/sandboxes/:name/nim`
 - `GET /api/sandboxes/:name/policy/raw`
+- `GET /api/sandboxes/:name/policy/endpoints`
+- `GET /api/sandboxes/:name/policy/preview-merge?preset=telegram`
 - `POST /api/sandboxes/:name/policy-add`
 - `GET /api/inference`
 - `GET /api/inference/providers`
+- `GET /api/inference/local/providers`
+- `GET /api/inference/local/providers/:provider/diagnostics?model=nemotron-3-nano:30b`
 - `GET /api/nim/gpu`
+- `GET /api/nim/models/compatible`
 - `GET /api/inference/local/ollama/models`
+- `GET /api/inference/local/default-model`
 - `GET /api/inference/local/bootstrap-options`
 - `POST /api/inference/local/validate`
 - `GET /api/presets/:name`
+- `GET /api/presets/:name/entries`
 - `GET /api/presets/:name/endpoints`
 - `GET /api/credentials`
 - `PUT /api/credentials/:key`
@@ -106,6 +115,7 @@ node standalone-api/server.js
 - `/chat` dùng SSH config từ `openshell sandbox ssh-config` để nhắn vào sandbox.
 - `/terminal` chỉ cho phép một nhóm action an toàn đã allow-list.
 - Một số endpoint hỗ trợ tham số tiện hơn như `port` cho connect/UI và `dashboardPort` cho start services.
+- Các endpoint chẩn đoán sâu mới ưu tiên chế độ read-only/preview: không ghi policy trực tiếp nếu không gọi endpoint apply tương ứng.
 - Các API services/logs dùng file trong `/tmp`, phù hợp nhất với Linux/WSL/macOS.
 - flow cài đặt mới dùng bootstrap `standalone-api/install.sh` của repo `thanhan92-f1/Nemo-Claw`; script sẽ clone/reuse repo, chạy local `ROOT_INSTALL_SCRIPT`, rồi chuẩn bị standalone API.
 - Nếu cần chat thực tế, sandbox phải tồn tại và OpenShell phải hoạt động.
