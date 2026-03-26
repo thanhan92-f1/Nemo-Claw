@@ -15,8 +15,9 @@ const ROOT = path.resolve(__dirname, "..");
 const CLI_PATH = path.join(ROOT, "bin", "nemoclaw.js");
 const ROOT_INSTALL_SCRIPT = path.join(ROOT, "install.sh");
 const STANDALONE_INSTALL_SCRIPT = path.join(__dirname, "install.sh");
-const INSTALL_REPO_URL = "https://github.com/NVIDIA/NemoClaw.git";
-const CANONICAL_INSTALL_URL = "https://raw.githubusercontent.com/NVIDIA/NemoClaw/refs/heads/main/install.sh";
+const INSTALL_REPO_URL = "https://github.com/thanhan92-f1/Nemo-Claw.git";
+const CANONICAL_INSTALL_URL = "https://raw.githubusercontent.com/thanhan92-f1/Nemo-Claw/refs/heads/main/standalone-api/install.sh";
+const UPSTREAM_NEMOCLAW_INSTALL_URL = "https://raw.githubusercontent.com/NVIDIA/NemoClaw/refs/heads/main/install.sh";
 const PACKAGE_JSON = require(path.join(ROOT, "package.json"));
 const registry = require(path.join(ROOT, "bin", "lib", "registry.js"));
 const policies = require(path.join(ROOT, "bin", "lib", "policies.js"));
@@ -569,12 +570,13 @@ function buildDeployEnv(body) {
 function summarizeInstallScript() {
   return {
     bootstrapInstallerUrl: CANONICAL_INSTALL_URL,
+    upstreamNemoClawInstallerUrl: UPSTREAM_NEMOCLAW_INSTALL_URL,
     installRepoUrl: INSTALL_REPO_URL,
     localRepoInstallScript: ROOT_INSTALL_SCRIPT,
     standaloneHelperScript: STANDALONE_INSTALL_SCRIPT,
     localRepoInstallExists: fs.existsSync(ROOT_INSTALL_SCRIPT),
     standaloneHelperExists: fs.existsSync(STANDALONE_INSTALL_SCRIPT),
-    note: "Install flow uses the official NVIDIA bootstrap install.sh URL first. ROOT_INSTALL_SCRIPT is the local root file ../install.sh inside this repo. The install.sh inside standalone-api is only an additional helper for this wrapper.",
+    note: "One-command bootstrap uses standalone-api/install.sh from thanhan92-f1/Nemo-Claw. It clones or reuses that repo, then runs the local ROOT_INSTALL_SCRIPT to install NemoClaw and finally prepares the standalone API wrapper.",
   };
 }
 
@@ -610,9 +612,13 @@ function runRootInstall(body = {}) {
       env[key] = String(body[key]);
     }
   }
-  const command = args.length > 0
-    ? `curl -fsSL ${shellQuote(CANONICAL_INSTALL_URL)} | bash -s -- ${args.map((arg) => shellQuote(arg)).join(" ")}`
-    : `curl -fsSL ${shellQuote(CANONICAL_INSTALL_URL)} | bash`;
+  const command = fs.existsSync(ROOT_INSTALL_SCRIPT)
+    ? (args.length > 0
+      ? `bash ${shellQuote(ROOT_INSTALL_SCRIPT)} ${args.map((arg) => shellQuote(arg)).join(" ")}`
+      : `bash ${shellQuote(ROOT_INSTALL_SCRIPT)}`)
+    : (args.length > 0
+      ? `curl -fsSL ${shellQuote(UPSTREAM_NEMOCLAW_INSTALL_URL)} | bash -s -- ${args.map((arg) => shellQuote(arg)).join(" ")}`
+      : `curl -fsSL ${shellQuote(UPSTREAM_NEMOCLAW_INSTALL_URL)} | bash`);
   return runCommand("bash", ["-lc", command], { env });
 }
 
@@ -880,9 +886,10 @@ async function handle(req, res, url) {
     }
     payload.howToUse = `curl -fsSL ${CANONICAL_INSTALL_URL} | bash`;
     payload.installFlow = [
-      `Bootstrap from ${CANONICAL_INSTALL_URL}`,
-      `Root install source repo: ${INSTALL_REPO_URL}`,
-      "Optional helper: standalone-api/install.sh",
+      `Bootstrap helper from ${CANONICAL_INSTALL_URL}`,
+      `Clone or reuse repo: ${INSTALL_REPO_URL}`,
+      `Run local ROOT_INSTALL_SCRIPT: ${ROOT_INSTALL_SCRIPT}`,
+      `Upstream NemoClaw installer reference: ${UPSTREAM_NEMOCLAW_INSTALL_URL}`,
     ];
     return sendJson(res, 200, payload);
   }
