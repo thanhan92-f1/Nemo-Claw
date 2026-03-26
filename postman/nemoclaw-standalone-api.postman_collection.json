@@ -11,6 +11,7 @@
       "item": [
         { "name": "Health", "request": { "method": "GET", "url": "{{baseUrl}}/health" } },
         { "name": "API Index", "request": { "method": "GET", "url": "{{baseUrl}}/api" } },
+        { "name": "Capability Matrix", "request": { "method": "GET", "url": "{{baseUrl}}/api/capabilities" } },
         { "name": "Command Surface", "request": { "method": "GET", "url": "{{baseUrl}}/api/commands" } },
         { "name": "Version", "request": { "method": "GET", "url": "{{baseUrl}}/api/version" } },
         { "name": "Help", "request": { "method": "GET", "url": "{{baseUrl}}/api/help" } },

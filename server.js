@@ -96,6 +96,7 @@ const CLI_SURFACE = {
 const ROUTES = [
   ["GET", "/health", "Health check"],
   ["GET", "/api", "List API routes"],
+  ["GET", "/api/capabilities", "Capability matrix for standalone routes"],
   ["GET", "/api/commands", "CLI command surface"],
   ["GET", "/api/version", "NemoClaw version"],
   ["GET", "/api/help", "CLI help"],
@@ -883,6 +884,156 @@ function getOpenApiDocument() {
   };
 }
 
+function inferRouteArea(pathValue = "") {
+  if (pathValue === "/" || pathValue === "/chat" || pathValue === "/terminal") return "ui";
+  if (pathValue.startsWith("/api/services")) return "services";
+  if (pathValue.startsWith("/api/sandboxes")) return "sandboxes";
+  if (pathValue.startsWith("/api/inference") || pathValue.startsWith("/api/nim")) return "inference";
+  if (pathValue.startsWith("/api/runtime")) return "runtime";
+  if (pathValue.startsWith("/api/gateway")) return "gateway";
+  if (pathValue.startsWith("/api/credentials")) return "credentials";
+  if (pathValue.startsWith("/api/install") || pathValue.startsWith("/api/onboard") || pathValue === "/api/setup" || pathValue === "/api/setup-spark") return "setup";
+  if (pathValue.startsWith("/api/deployments")) return "deployments";
+  if (pathValue.startsWith("/api/debug")) return "debug";
+  if (pathValue.startsWith("/api/uninstall")) return "uninstall";
+  if (pathValue.startsWith("/api/presets")) return "policy";
+  if (pathValue.startsWith("/api/chat") || pathValue.startsWith("/api/terminal")) return "interactive";
+  return "general";
+}
+
+function describeRouteCapability(method, pathValue, description) {
+  const access = ["GET", "HEAD", "OPTIONS"].includes(method) ? "read-only" : "mutating";
+  const requirements = {
+    bash: false,
+    docker: false,
+    openshell: false,
+    localFiles: false,
+    sandbox: "none",
+    network: "none",
+    credentials: [],
+  };
+  const notes = [];
+
+  if (pathValue === "/chat" || pathValue === "/terminal" || pathValue.startsWith("/api/chat") || pathValue.startsWith("/api/terminal")) {
+    requirements.openshell = true;
+    requirements.sandbox = "required";
+    notes.push("Requires an existing sandbox session target.");
+  }
+
+  if (pathValue.startsWith("/api/sandboxes/:name")) {
+    requirements.sandbox = "required";
+    if (["/status", "/status/structured", "/gateway-state", "/readiness", "/nim", "/connect", "/logs", "/ui"].some((segment) => pathValue.includes(segment))) {
+      requirements.openshell = true;
+    }
+    if (["/policies", "/policy/"].some((segment) => pathValue.includes(segment))) {
+      requirements.localFiles = true;
+    }
+    notes.push("Path parameter `:name` must resolve to a sandbox name.");
+  }
+
+  if (pathValue.startsWith("/api/services") || pathValue === "/api/start" || pathValue === "/api/stop") {
+    requirements.bash = true;
+    requirements.localFiles = true;
+    notes.push("Service scripts rely on bash and pid/log files.");
+  }
+
+  if (["/api/openshell/diagnostics", "/api/runtime/platform", "/api/gateway/inspect", "/api/environment/summary", "/api/nim/gpu", "/api/nim/models/compatible"].includes(pathValue)) {
+    requirements.openshell = true;
+    requirements.docker = true;
+  }
+
+  if (["/api/inference", "/api/inference/providers", "/api/runtime/inference-config", "/api/gateway/status"].includes(pathValue)) {
+    requirements.openshell = true;
+  }
+
+  if (pathValue.startsWith("/api/inference/local")) {
+    requirements.openshell = true;
+    notes.push("Most local inference checks are safe without network access.");
+  }
+
+  if (pathValue === "/api/runtime/registry" || pathValue.startsWith("/api/presets") || pathValue === "/api/install" || pathValue === "/api/install/script") {
+    requirements.localFiles = true;
+  }
+
+  if (["/api/inference/models/nvidia", "/api/inference/models/openai-compatible", "/api/inference/models/anthropic-compatible", "/api/inference/remote/validate", "/api/deployments"].includes(pathValue)) {
+    requirements.network = "required";
+  }
+
+  if (["/api/install/run", "/api/setup", "/api/setup-spark", "/api/onboard", "/api/deployments", "/api/debug", "/api/uninstall"].includes(pathValue)) {
+    requirements.bash = true;
+  }
+
+  if (["/api/inference/models/nvidia", "/api/inference/remote/validate", "/api/deployments", "/api/services/start"].includes(pathValue)) {
+    requirements.credentials.push("NVIDIA_API_KEY");
+  }
+  if (pathValue === "/api/inference/models/openai-compatible") requirements.credentials.push("OPENAI_API_KEY or COMPATIBLE_API_KEY");
+  if (pathValue === "/api/inference/models/anthropic-compatible") requirements.credentials.push("ANTHROPIC_API_KEY or COMPATIBLE_ANTHROPIC_API_KEY");
+  if (pathValue === "/api/services/start") requirements.credentials.push("TELEGRAM_BOT_TOKEN (optional)");
+  if (pathValue.startsWith("/api/credentials/")) notes.push("Writes to the local credential store.");
+  if (pathValue === "/api/openapi.json") notes.push("Generated directly from the in-memory `ROUTES` table.");
+  if (pathValue === "/api/capabilities") notes.push("Derived from route metadata and lightweight heuristics.");
+
+  const safeForSmokeTest = access === "read-only"
+    && requirements.sandbox === "none"
+    && requirements.network === "none"
+    && requirements.credentials.length === 0
+    && !requirements.bash
+    && !pathValue.startsWith("/api/services/logs/")
+    && pathValue !== "/api/openshell/diagnostics"
+    && pathValue !== "/api/runtime/platform"
+    && pathValue !== "/api/nim/gpu"
+    && pathValue !== "/api/nim/models/compatible"
+    && pathValue !== "/chat"
+    && pathValue !== "/terminal";
+
+  const portability = {
+    linux: "supported",
+    wsl: requirements.bash || requirements.docker ? "best-effort" : "supported",
+    macos: requirements.bash && pathValue.startsWith("/api/services") ? "best-effort" : "supported",
+    windows: requirements.bash || requirements.docker ? "limited" : "supported",
+  };
+
+  return {
+    method,
+    path: pathValue,
+    description,
+    area: inferRouteArea(pathValue),
+    access,
+    safeForSmokeTest,
+    requirements,
+    portability,
+    notes,
+  };
+}
+
+function getCapabilityMatrix() {
+  const routes = ROUTES.map(([method, pathValue, description]) => describeRouteCapability(method, pathValue, description));
+  const byArea = routes.reduce((acc, route) => {
+    acc[route.area] = (acc[route.area] || 0) + 1;
+    return acc;
+  }, {});
+  return {
+    generatedAt: new Date().toISOString(),
+    summary: {
+      totalRoutes: routes.length,
+      readOnlyRoutes: routes.filter((route) => route.access === "read-only").length,
+      mutatingRoutes: routes.filter((route) => route.access === "mutating").length,
+      smokeTestCandidates: routes.filter((route) => route.safeForSmokeTest).map((route) => `${route.method} ${route.path}`),
+      byArea,
+      byRequirement: {
+        bash: routes.filter((route) => route.requirements.bash).length,
+        docker: routes.filter((route) => route.requirements.docker).length,
+        openshell: routes.filter((route) => route.requirements.openshell).length,
+        localFiles: routes.filter((route) => route.requirements.localFiles).length,
+        sandboxRequired: routes.filter((route) => route.requirements.sandbox === "required").length,
+        networkRequired: routes.filter((route) => route.requirements.network === "required").length,
+        credentials: routes.filter((route) => route.requirements.credentials.length > 0).length,
+      },
+    },
+    routes,
+  };
+}
+
 async function getPortPreflight(port) {
   const safePort = getForwardPort(port);
   const result = await preflight.checkPortAvailable(safePort);
@@ -1516,6 +1667,9 @@ async function handle(req, res, url) {
   if (req.method === "GET" && pathname === "/api") {
     return sendJson(res, 200, { name: "nemoclaw-standalone-api", version: PACKAGE_JSON.version, baseUrl: `http://${HOST}:${PORT}`, endpoints: ROUTES.map(([method, pathValue, description]) => ({ method, path: pathValue, description })) });
   }
+  if (req.method === "GET" && pathname === "/api/capabilities") {
+    return sendJson(res, 200, getCapabilityMatrix());
+  }
   if (req.method === "GET" && pathname === "/api/commands") {
     return sendJson(res, 200, CLI_SURFACE);
   }
@@ -2076,4 +2230,4 @@ server.on("clientError", (_error, socket) => {
 process.on("SIGINT", () => server.close(() => process.exit(0)));
 process.on("SIGTERM", () => server.close(() => process.exit(0)));
 
-module.exports = { server };
+module.exports = { server, ROUTES, getCapabilityMatrix };

@@ -3,6 +3,7 @@
 ## 2026-03-26
 
 ### Added
+- `GET /api/capabilities` for generated route capability and smoke-test metadata.
 - `GET /api/openshell/diagnostics` for OpenShell and container runtime diagnostics.
 - `GET /api/preflight/ports` for batch port availability checks.
 - `GET /api/inference/local/providers` for local inference provider catalog.
@@ -22,6 +23,7 @@
 - `standalone-api/README.md` now documents deep diagnostic routes and response examples.
 - `standalone-api/postman/nemoclaw-standalone-api.postman_collection.json` now includes requests for deep diagnostics and preview APIs.
 - `standalone-api/README.md` now also documents gateway inspect, services inspect, and OpenAPI export.
+- Added `test/standalone-api-smoke.test.js` for read-only smoke coverage of health, route index, OpenAPI export, and capability matrix.
 
 ### Fixed
 - Repaired the `handle()` router in `standalone-api/server.js` after malformed route insertion.

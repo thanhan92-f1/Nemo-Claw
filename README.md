@@ -50,7 +50,7 @@ node standalone-api/server.js
 
 ## Nhóm API
 
-- Global: version, help, list, status, presets, preset entries, onboard options, command surface, OpenShell diagnostics, gateway inspect, runtime internals, OpenAPI export, environment summary
+- Global: version, help, list, status, presets, preset entries, onboard options, command surface, capability matrix, OpenShell diagnostics, gateway inspect, runtime internals, OpenAPI export, environment summary
 - Install: đọc metadata bootstrap 1 lệnh, xem root install local/upstream, hoặc trigger install qua API
 - Onboard: chạy `nemoclaw onboard --non-interactive`
 - Setup: wrapper cho `nemoclaw setup` và `nemoclaw setup-spark`
@@ -69,6 +69,7 @@ node standalone-api/server.js
 
 - `GET /api/commands`
 - `GET /api/list`
+- `GET /api/capabilities`
 - `GET /api/openshell/diagnostics`
 - `GET /api/gateway/inspect`
 - `GET /api/runtime/platform`
@@ -163,6 +164,16 @@ node standalone-api/server.js
 - Trả về OpenAPI 3.1 được generate từ `ROUTES` hiện tại.
 - Hữu ích để import vào tool khác hoặc generate client/test tự động.
 
+### `GET /api/capabilities`
+
+- Trả về capability matrix cho toàn bộ route hiện có.
+- Có các nhóm chính:
+	- `summary.byArea`
+	- `summary.byRequirement`
+	- `summary.smokeTestCandidates`
+	- `routes[]` với `area`, `access`, `safeForSmokeTest`, `requirements`, `portability`
+- Dùng tốt khi muốn biết endpoint nào an toàn để smoke test hoặc endpoint nào cần `bash`, `docker`, `openshell`, sandbox, network hay credentials.
+
 ### `GET /api/sandboxes/:name/policy/preview-merge?preset=telegram`
 
 - Trả về preview trước khi apply policy:
@@ -186,6 +197,7 @@ node standalone-api/server.js
 - `/terminal` chỉ cho phép một nhóm action an toàn đã allow-list.
 - Một số endpoint hỗ trợ tham số tiện hơn như `port` cho connect/UI và `dashboardPort` cho start services.
 - Các endpoint chẩn đoán sâu mới ưu tiên chế độ read-only/preview: không ghi policy trực tiếp nếu không gọi endpoint apply tương ứng.
+- `GET /api/capabilities` là route read-only, generate động từ metadata route + heuristic phụ thuộc runtime.
 - Các API services/logs dùng file trong `/tmp`, phù hợp nhất với Linux/WSL/macOS.
 - flow cài đặt mới dùng bootstrap `standalone-api/install.sh` của repo `thanhan92-f1/Nemo-Claw`; script sẽ clone/reuse repo, chạy local `ROOT_INSTALL_SCRIPT`, rồi chuẩn bị standalone API.
 - Nếu cần chat thực tế, sandbox phải tồn tại và OpenShell phải hoạt động.
