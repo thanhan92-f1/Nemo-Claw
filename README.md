@@ -50,7 +50,7 @@ node standalone-api/server.js
 
 ## Nhóm API
 
-- Global: version, help, list, status, presets, preset entries, onboard options, command surface, OpenShell diagnostics, environment summary
+- Global: version, help, list, status, presets, preset entries, onboard options, command surface, OpenShell diagnostics, runtime internals, environment summary
 - Install: đọc metadata bootstrap 1 lệnh, xem root install local/upstream, hoặc trigger install qua API
 - Onboard: chạy `nemoclaw onboard --non-interactive`
 - Setup: wrapper cho `nemoclaw setup` và `nemoclaw setup-spark`
@@ -70,6 +70,9 @@ node standalone-api/server.js
 - `GET /api/commands`
 - `GET /api/list`
 - `GET /api/openshell/diagnostics`
+- `GET /api/runtime/platform`
+- `GET /api/runtime/registry`
+- `GET /api/runtime/inference-config`
 - `GET /api/install`
 - `GET /api/install/script`
 - `POST /api/install/run`
@@ -108,6 +111,48 @@ node standalone-api/server.js
 - `PUT /api/credentials/:key`
 - `GET /api/services/structured-status`
 - `GET /api/services/logs/:service`
+
+## Ví dụ response
+
+### `GET /api/runtime/platform`
+
+- Trả về runtime snapshot read-only gồm:
+	- `node.version`, `node.execPath`
+	- `platform.platform`, `platform.arch`, `platform.isWsl`
+	- `containerRuntime.runtime`, `containerRuntime.dockerHost`, `containerRuntime.socketCandidates`
+	- `openshell.version`, `openshell.stableGatewayImageRef`
+
+### `GET /api/runtime/registry`
+
+- Trả về registry nội bộ của sandbox:
+	- `registryFile.path`, `registryFile.exists`
+	- `defaultSandbox`, `sandboxCount`, `sandboxNames`
+	- `sandboxes[]` với `provider`, `model`, `nimContainer`, `policyCount`
+	- `raw` để debug trực tiếp nội dung registry hiện tại
+
+### `GET /api/runtime/inference-config`
+
+- Trả về cấu hình route inference đã resolve:
+	- `routeUrl`, `managedProviderId`
+	- `defaults.cloudModel`, `defaults.ollamaModel`, `defaults.routeProfile`
+	- `cloudModelOptions[]`
+	- `providers[]` với `selection` và `primaryModelPreview`
+
+### `GET /api/sandboxes/:name/policy/preview-merge?preset=telegram`
+
+- Trả về preview trước khi apply policy:
+	- `current.endpoints`
+	- `preset.entries`, `preset.endpoints`
+	- `merged.newEndpoints`, `merged.alreadyPresentEndpoints`
+	- `merged.policyYaml`
+
+### `GET /api/inference/local/providers/:provider/diagnostics`
+
+- Trả về chẩn đoán local provider:
+	- `expected.baseUrl`, `expected.validationBaseUrl`
+	- `commands.healthCheck`, `commands.containerReachabilityCheck`
+	- `providerCheck`
+	- `modelCheck` nếu truyền `model` cho `ollama-local`
 
 ## Ghi chú
 

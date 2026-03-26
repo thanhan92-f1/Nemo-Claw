@@ -142,6 +142,9 @@ const ROUTES = [
   ["POST", "/api/inference/local/validate", "Validate local inference provider or model"],
   ["GET", "/api/gateway/status", "Named gateway status"],
   ["GET", "/api/openshell/diagnostics", "OpenShell and container runtime diagnostics"],
+  ["GET", "/api/runtime/platform", "Platform and container runtime internals"],
+  ["GET", "/api/runtime/registry", "Sandbox registry internals"],
+  ["GET", "/api/runtime/inference-config", "Inference route and provider defaults"],
   ["GET", "/api/environment/summary", "Local runtime and environment summary"],
   ["GET", "/api/preflight/port?port=18789", "Port availability preflight"],
   ["GET", "/api/preflight/ports?ports=18789,3100", "Batch port availability preflight"],
@@ -787,6 +790,91 @@ function getOpenshellDiagnostics() {
   };
 }
 
+function getPlatformRuntimeInfo() {
+  const dockerVersion = runCommand("docker", ["version", "--format", "{{json .}}"]);
+  const dockerOutput = `${dockerVersion.stdout}${dockerVersion.stderr}`;
+  const detectedHost = platformInfo.detectDockerHost();
+  const runtime = platformInfo.inferContainerRuntime(dockerOutput);
+  return {
+    node: {
+      version: process.version,
+      execPath: process.execPath,
+    },
+    platform: {
+      platform: process.platform,
+      arch: process.arch,
+      release: os.release(),
+      home: process.env.HOME || os.homedir(),
+      cwd: ROOT,
+      isWsl: platformInfo.isWsl(),
+    },
+    containerRuntime: {
+      runtime,
+      dockerHost: detectedHost,
+      socketCandidates: platformInfo.getDockerSocketCandidates ? platformInfo.getDockerSocketCandidates() : [],
+      shouldPatchCoredns: platformInfo.shouldPatchCoredns(runtime),
+      dockerVersionCommand: wrapCommand("docker version --format {{json .}}", dockerVersion),
+    },
+    openshell: {
+      binary: openshellBinary,
+      version: onboard.getInstalledOpenshellVersion(),
+      stableGatewayImageRef: onboard.getStableGatewayImageRef(),
+    },
+    ports: {
+      defaultForwardPort: DEFAULT_FORWARD_PORT,
+      apiHost: HOST,
+      apiPort: PORT,
+    },
+  };
+}
+
+function getRegistryDiagnostics() {
+  const registryPath = path.join(process.env.HOME || os.homedir(), ".nemoclaw", "sandboxes.json");
+  const raw = registry.load();
+  const sandboxNames = Object.keys(raw?.sandboxes || {});
+  return {
+    registryFile: {
+      path: registryPath,
+      exists: fs.existsSync(registryPath),
+    },
+    defaultSandbox: registry.getDefault(),
+    sandboxCount: sandboxNames.length,
+    sandboxNames,
+    sandboxes: sandboxNames.map((name) => {
+      const sandbox = raw.sandboxes[name] || {};
+      return {
+        name,
+        createdAt: sandbox.createdAt || null,
+        provider: sandbox.provider || null,
+        model: sandbox.model || null,
+        nimContainer: sandbox.nimContainer || null,
+        gpuEnabled: Boolean(sandbox.gpuEnabled),
+        policyCount: Array.isArray(sandbox.policies) ? sandbox.policies.length : 0,
+      };
+    }),
+    raw,
+  };
+}
+
+function getInferenceConfigSummary() {
+  return {
+    routeUrl: inferenceConfig.INFERENCE_ROUTE_URL,
+    managedProviderId: inferenceConfig.MANAGED_PROVIDER_ID,
+    defaults: {
+      cloudModel: inferenceConfig.DEFAULT_CLOUD_MODEL,
+      ollamaModel: inferenceConfig.DEFAULT_OLLAMA_MODEL,
+      routeProfile: inferenceConfig.DEFAULT_ROUTE_PROFILE,
+      routeCredentialEnv: inferenceConfig.DEFAULT_ROUTE_CREDENTIAL_ENV,
+    },
+    cloudModelOptions: inferenceConfig.CLOUD_MODEL_OPTIONS,
+    providers: PROVIDERS.map((provider) => ({
+      provider,
+      selection: inferenceConfig.getProviderSelectionConfig(provider, ""),
+      primaryModelPreview: inferenceConfig.getOpenClawPrimaryModel(provider, ""),
+    })),
+  };
+}
+
 function getLocalInferenceProviders() {
   const gpu = nim.detectGpu();
   return {
@@ -1390,6 +1478,15 @@ async function handle(req, res, url) {
   }
   if (req.method === "GET" && pathname === "/api/openshell/diagnostics") {
     return sendJson(res, 200, getOpenshellDiagnostics());
+  }
+  if (req.method === "GET" && pathname === "/api/runtime/platform") {
+    return sendJson(res, 200, getPlatformRuntimeInfo());
+  }
+  if (req.method === "GET" && pathname === "/api/runtime/registry") {
+    return sendJson(res, 200, getRegistryDiagnostics());
+  }
+  if (req.method === "GET" && pathname === "/api/runtime/inference-config") {
+    return sendJson(res, 200, getInferenceConfigSummary());
   }
   if (req.method === "GET" && pathname === "/api/environment/summary") {
     return sendJson(res, 200, getEnvironmentSummary(url.searchParams));
