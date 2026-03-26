@@ -1,0 +1,355 @@
+{
+  "info": {
+    "_postman_id": "cb2f7d77-cde4-4790-a7e5-7efdc75f6d40",
+    "name": "NemoClaw Standalone API",
+    "description": "Standalone REST wrapper for NemoClaw core CLI. Includes chat, terminal helper, onboarding, sandbox management, services, deployment, debug, and uninstall.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        { "name": "Health", "request": { "method": "GET", "url": "{{baseUrl}}/health" } },
+        { "name": "API Index", "request": { "method": "GET", "url": "{{baseUrl}}/api" } },
+        { "name": "Command Surface", "request": { "method": "GET", "url": "{{baseUrl}}/api/commands" } },
+        { "name": "Version", "request": { "method": "GET", "url": "{{baseUrl}}/api/version" } },
+        { "name": "Help", "request": { "method": "GET", "url": "{{baseUrl}}/api/help" } },
+        { "name": "CLI List", "request": { "method": "GET", "url": "{{baseUrl}}/api/list" } },
+        { "name": "Global Status", "request": { "method": "GET", "url": "{{baseUrl}}/api/status" } },
+        { "name": "Policy Presets", "request": { "method": "GET", "url": "{{baseUrl}}/api/presets" } },
+        { "name": "Onboard Options", "request": { "method": "GET", "url": "{{baseUrl}}/api/onboard/options" } },
+        { "name": "Install Metadata", "request": { "method": "GET", "url": "{{baseUrl}}/api/install" } },
+        { "name": "Install Script Info", "request": { "method": "GET", "url": "{{baseUrl}}/api/install/script" } }
+      ]
+    },
+    {
+      "name": "Inference",
+      "item": [
+        { "name": "Gateway Status", "request": { "method": "GET", "url": "{{baseUrl}}/api/gateway/status" } },
+        { "name": "Port Preflight", "request": { "method": "GET", "url": "{{baseUrl}}/api/preflight/port?port=18789" } },
+        { "name": "Live Inference", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference" } },
+        { "name": "Inference Providers", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/providers" } },
+        { "name": "NIM GPU Info", "request": { "method": "GET", "url": "{{baseUrl}}/api/nim/gpu" } },
+        { "name": "Ollama Models", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/ollama/models" } },
+        { "name": "Bootstrap Options", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/bootstrap-options" } },
+        {
+          "name": "Validate Local Provider",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"ollama-local\",\n  \"model\": \"nemotron-3-nano:30b\"\n}"
+            },
+            "url": "{{baseUrl}}/api/inference/local/validate"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Credentials",
+      "item": [
+        { "name": "Credential Summary", "request": { "method": "GET", "url": "{{baseUrl}}/api/credentials" } },
+        {
+          "name": "Save NVIDIA API Key",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"nvapi-xxxxxxxx\"\n}"
+            },
+            "url": "{{baseUrl}}/api/credentials/NVIDIA_API_KEY"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Policy Details",
+      "item": [
+        { "name": "Preset Detail", "request": { "method": "GET", "url": "{{baseUrl}}/api/presets/{{presetName}}" } },
+        { "name": "Preset Endpoints", "request": { "method": "GET", "url": "{{baseUrl}}/api/presets/{{presetName}}/endpoints" } }
+      ]
+    },
+    {
+      "name": "Install & Setup",
+      "item": [
+        {
+          "name": "Run Root Install",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nonInteractive\": true,\n  \"NEMOCLAW_NON_INTERACTIVE\": \"1\",\n  \"NEMOCLAW_SANDBOX_NAME\": \"{{sandboxName}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/install/run"
+          }
+        },
+        {
+          "name": "Legacy Setup",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{baseUrl}}/api/setup"
+          }
+        },
+        {
+          "name": "Setup Spark",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{baseUrl}}/api/setup-spark"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Onboard",
+      "item": [
+        {
+          "name": "Onboard Preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"nvidia-prod\",\n  \"model\": \"nvidia/nemotron-3-super-120b-a12b\"\n}"
+            },
+            "url": "{{baseUrl}}/api/onboard/preview"
+          }
+        },
+        {
+          "name": "Onboard Non Interactive",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"nvidia-prod\",\n  \"model\": \"nvidia/nemotron-3-super-120b-a12b\",\n  \"sandboxName\": \"{{sandboxName}}\",\n  \"recreateSandbox\": false,\n  \"policyMode\": \"suggested\",\n  \"policyPresets\": [\"telegram\"],\n  \"chatUiUrl\": \"{{baseUrl}}/chat?sandbox={{sandboxName}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/onboard"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sandboxes",
+      "item": [
+        { "name": "List Sandboxes", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes" } },
+        { "name": "Get Default Sandbox", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/default" } },
+        {
+          "name": "Set Default Sandbox",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{sandboxName}}\"\n}" },
+            "url": "{{baseUrl}}/api/sandboxes/default"
+          }
+        },
+        { "name": "Sandbox Details", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}" } },
+        { "name": "Sandbox Status", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/status" } },
+        { "name": "Sandbox Status Structured", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/status/structured" } },
+        { "name": "Sandbox Gateway State", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/gateway-state" } },
+        { "name": "Sandbox Readiness", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/readiness" } },
+        { "name": "Sandbox NIM", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/nim" } },
+        {
+          "name": "Sandbox Connect",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"port\": 18789\n}" },
+            "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/connect"
+          }
+        },
+        { "name": "Sandbox Logs", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/logs" } },
+        { "name": "Sandbox Logs Follow", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/logs?follow=true" } },
+        { "name": "Sandbox Policies", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/policies" } },
+        { "name": "Raw Sandbox Policy", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/policy/raw" } },
+        {
+          "name": "Apply Policy",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"presetName\": \"{{presetName}}\"\n}" },
+            "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/policies"
+          }
+        },
+        {
+          "name": "Policy Add Alias",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"presetName\": \"{{presetName}}\"\n}" },
+            "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/policy-add"
+          }
+        },
+        { "name": "Sandbox UI Links", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/ui?port=18789" } },
+        { "name": "Destroy Sandbox", "request": { "method": "DELETE", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}?yes=true" } }
+      ]
+    },
+    {
+      "name": "Services",
+      "item": [
+        { "name": "Service Status", "request": { "method": "GET", "url": "{{baseUrl}}/api/services/status" } },
+        { "name": "Service Status By Sandbox", "request": { "method": "GET", "url": "{{baseUrl}}/api/services/status?sandboxName={{sandboxName}}" } },
+        { "name": "Structured Service Status", "request": { "method": "GET", "url": "{{baseUrl}}/api/services/structured-status?sandboxName={{sandboxName}}" } },
+        { "name": "Telegram Bridge Log", "request": { "method": "GET", "url": "{{baseUrl}}/api/services/logs/telegram-bridge?sandboxName={{sandboxName}}" } },
+        { "name": "Cloudflared Log", "request": { "method": "GET", "url": "{{baseUrl}}/api/services/logs/cloudflared?sandboxName={{sandboxName}}" } },
+        {
+          "name": "CLI Start Alias",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{baseUrl}}/api/start"
+          }
+        },
+        {
+          "name": "CLI Stop Alias",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{baseUrl}}/api/stop"
+          }
+        },
+        {
+          "name": "Start Services",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sandboxName\": \"{{sandboxName}}\",\n  \"dashboardPort\": 18789\n}" },
+            "url": "{{baseUrl}}/api/services/start"
+          }
+        },
+        {
+          "name": "Stop Services",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sandboxName\": \"{{sandboxName}}\"\n}" },
+            "url": "{{baseUrl}}/api/services/stop"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Deployment & Maintenance",
+      "item": [
+        {
+          "name": "Deploy",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"instanceName\": \"{{instanceName}}\"\n}" },
+            "url": "{{baseUrl}}/api/deployments"
+          }
+        },
+        {
+          "name": "Debug",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sandboxName\": \"{{sandboxName}}\",\n  \"quick\": true\n}" },
+            "url": "{{baseUrl}}/api/debug"
+          }
+        },
+        {
+          "name": "Uninstall",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"yes\": true,\n  \"keepOpenshell\": false,\n  \"deleteModels\": false\n}" },
+            "url": "{{baseUrl}}/api/uninstall"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat & Terminal",
+      "item": [
+        {
+          "name": "Chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandboxName\": \"{{sandboxName}}\",\n  \"sessionId\": \"{{sessionId}}\",\n  \"message\": \"Xin chào NemoClaw, hãy kiểm tra trạng thái sandbox hiện tại.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/chat"
+          }
+        },
+        {
+          "name": "Terminal Action Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandboxName\": \"{{sandboxName}}\",\n  \"action\": \"sandbox-status\"\n}"
+            },
+            "url": "{{baseUrl}}/api/terminal/exec"
+          }
+        },
+        {
+          "name": "Terminal Action UI Links",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandboxName\": \"{{sandboxName}}\",\n  \"action\": \"ui\"\n}"
+            },
+            "url": "{{baseUrl}}/api/terminal/exec"
+          }
+        }
+      ]
+    }
+  ]
+}
