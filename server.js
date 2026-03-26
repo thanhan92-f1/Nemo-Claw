@@ -15,6 +15,7 @@ const ROOT = path.resolve(__dirname, "..");
 const CLI_PATH = path.join(ROOT, "bin", "nemoclaw.js");
 const ROOT_INSTALL_SCRIPT = path.join(ROOT, "install.sh");
 const STANDALONE_INSTALL_SCRIPT = path.join(__dirname, "install.sh");
+const INSTALL_REPO_URL = "https://github.com/NVIDIA/NemoClaw.git";
 const CANONICAL_INSTALL_URL = "https://raw.githubusercontent.com/NVIDIA/NemoClaw/refs/heads/main/install.sh";
 const PACKAGE_JSON = require(path.join(ROOT, "package.json"));
 const registry = require(path.join(ROOT, "bin", "lib", "registry.js"));
@@ -94,9 +95,9 @@ const ROUTES = [
   ["GET", "/api/list", "CLI list alias"],
   ["GET", "/api/status", "Global status"],
   ["GET", "/api/presets", "Policy presets"],
-  ["GET", "/api/install", "Canonical installer metadata"],
-  ["GET", "/api/install/script", "Canonical installer info"],
-  ["POST", "/api/install/run", "Run canonical installer"],
+  ["GET", "/api/install", "Bootstrap installer metadata"],
+  ["GET", "/api/install/script", "Bootstrap installer and root install info"],
+  ["POST", "/api/install/run", "Run bootstrap installer"],
   ["GET", "/api/onboard/options", "Onboard options"],
   ["POST", "/api/onboard", "Run non-interactive onboard"],
   ["POST", "/api/setup", "Run legacy nemoclaw setup"],
@@ -567,12 +568,13 @@ function buildDeployEnv(body) {
 
 function summarizeInstallScript() {
   return {
-    canonicalInstallerUrl: CANONICAL_INSTALL_URL,
+    bootstrapInstallerUrl: CANONICAL_INSTALL_URL,
+    installRepoUrl: INSTALL_REPO_URL,
     localRepoInstallScript: ROOT_INSTALL_SCRIPT,
     standaloneHelperScript: STANDALONE_INSTALL_SCRIPT,
     localRepoInstallExists: fs.existsSync(ROOT_INSTALL_SCRIPT),
     standaloneHelperExists: fs.existsSync(STANDALONE_INSTALL_SCRIPT),
-    note: "Canonical installer is the raw GitHub install.sh URL. The install.sh inside standalone-api is only an additional helper for this wrapper.",
+    note: "Install flow uses the official NVIDIA bootstrap install.sh URL first. ROOT_INSTALL_SCRIPT is the local root file ../install.sh inside this repo. The install.sh inside standalone-api is only an additional helper for this wrapper.",
   };
 }
 
@@ -877,6 +879,11 @@ async function handle(req, res, url) {
       payload.localRepoInstallContent = readTextFileSafe(ROOT_INSTALL_SCRIPT);
     }
     payload.howToUse = `curl -fsSL ${CANONICAL_INSTALL_URL} | bash`;
+    payload.installFlow = [
+      `Bootstrap from ${CANONICAL_INSTALL_URL}`,
+      `Root install source repo: ${INSTALL_REPO_URL}`,
+      "Optional helper: standalone-api/install.sh",
+    ];
     return sendJson(res, 200, payload);
   }
   if (req.method === "POST" && pathname === "/api/install/run") {

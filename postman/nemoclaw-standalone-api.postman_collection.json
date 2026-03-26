@@ -18,8 +18,8 @@
         { "name": "Global Status", "request": { "method": "GET", "url": "{{baseUrl}}/api/status" } },
         { "name": "Policy Presets", "request": { "method": "GET", "url": "{{baseUrl}}/api/presets" } },
         { "name": "Onboard Options", "request": { "method": "GET", "url": "{{baseUrl}}/api/onboard/options" } },
-        { "name": "Install Metadata", "request": { "method": "GET", "url": "{{baseUrl}}/api/install" } },
-        { "name": "Install Script Info", "request": { "method": "GET", "url": "{{baseUrl}}/api/install/script" } }
+        { "name": "Bootstrap Install Metadata", "request": { "method": "GET", "url": "{{baseUrl}}/api/install" } },
+        { "name": "Bootstrap Install Script Info", "request": { "method": "GET", "url": "{{baseUrl}}/api/install/script" } }
       ]
     },
     {
@@ -79,7 +79,7 @@
       "name": "Install & Setup",
       "item": [
         {
-          "name": "Run Root Install",
+          "name": "Run Bootstrap Install",
           "request": {
             "method": "POST",
             "header": [
