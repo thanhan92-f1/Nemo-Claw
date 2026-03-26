@@ -16,6 +16,7 @@
         { "name": "Help", "request": { "method": "GET", "url": "{{baseUrl}}/api/help" } },
         { "name": "CLI List", "request": { "method": "GET", "url": "{{baseUrl}}/api/list" } },
         { "name": "Global Status", "request": { "method": "GET", "url": "{{baseUrl}}/api/status" } },
+        { "name": "Environment Summary", "request": { "method": "GET", "url": "{{baseUrl}}/api/environment/summary?ports=18789,3100" } },
         { "name": "Policy Presets", "request": { "method": "GET", "url": "{{baseUrl}}/api/presets" } },
         { "name": "Onboard Options", "request": { "method": "GET", "url": "{{baseUrl}}/api/onboard/options" } },
         { "name": "One-Command Bootstrap Metadata", "request": { "method": "GET", "url": "{{baseUrl}}/api/install" } },
@@ -31,6 +32,7 @@
         { "name": "Inference Providers", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/providers" } },
         { "name": "NIM GPU Info", "request": { "method": "GET", "url": "{{baseUrl}}/api/nim/gpu" } },
         { "name": "Ollama Models", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/ollama/models" } },
+        { "name": "Default Local Model", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/default-model" } },
         { "name": "Bootstrap Options", "request": { "method": "GET", "url": "{{baseUrl}}/api/inference/local/bootstrap-options" } },
         {
           "name": "Validate Local Provider",
@@ -186,6 +188,7 @@
         { "name": "Sandbox Logs Follow", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/logs?follow=true" } },
         { "name": "Sandbox Policies", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/policies" } },
         { "name": "Raw Sandbox Policy", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/policy/raw" } },
+        { "name": "Sandbox Policy Endpoints", "request": { "method": "GET", "url": "{{baseUrl}}/api/sandboxes/{{sandboxName}}/policy/endpoints" } },
         {
           "name": "Apply Policy",
           "request": {

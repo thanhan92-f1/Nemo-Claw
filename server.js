@@ -26,6 +26,7 @@ const localInference = require(path.join(ROOT, "bin", "lib", "local-inference.js
 const nim = require(path.join(ROOT, "bin", "lib", "nim.js"));
 const onboard = require(path.join(ROOT, "bin", "lib", "onboard.js"));
 const preflight = require(path.join(ROOT, "bin", "lib", "preflight.js"));
+const platformInfo = require(path.join(ROOT, "bin", "lib", "platform.js"));
 const { resolveOpenshell } = require(path.join(ROOT, "bin", "lib", "resolve-openshell.js"));
 const { shellQuote, validateName } = require(path.join(ROOT, "bin", "lib", "runner.js"));
 const inferenceConfig = require(path.join(ROOT, "bin", "lib", "inference-config.js"));
@@ -116,6 +117,7 @@ const ROUTES = [
   ["GET", "/api/sandboxes/:name/logs", "Sandbox logs"],
   ["GET", "/api/sandboxes/:name/policies", "Sandbox policies"],
   ["GET", "/api/sandboxes/:name/policy/raw", "Raw live sandbox policy"],
+  ["GET", "/api/sandboxes/:name/policy/endpoints", "Extract live sandbox policy endpoints"],
   ["POST", "/api/sandboxes/:name/policies", "Apply policy preset"],
   ["POST", "/api/sandboxes/:name/policy-add", "CLI policy-add alias"],
   ["DELETE", "/api/sandboxes/:name", "Destroy sandbox"],
@@ -123,9 +125,11 @@ const ROUTES = [
   ["GET", "/api/inference", "Live inference status"],
   ["GET", "/api/inference/providers", "Inference provider metadata"],
   ["GET", "/api/inference/local/ollama/models", "Local Ollama models"],
+  ["GET", "/api/inference/local/default-model", "Recommended local Ollama model"],
   ["GET", "/api/inference/local/bootstrap-options", "Local bootstrap model options"],
   ["POST", "/api/inference/local/validate", "Validate local inference provider or model"],
   ["GET", "/api/gateway/status", "Named gateway status"],
+  ["GET", "/api/environment/summary", "Local runtime and environment summary"],
   ["GET", "/api/preflight/port?port=18789", "Port availability preflight"],
   ["POST", "/api/onboard/preview", "Preview non-interactive onboard config"],
   ["GET", "/api/presets/:name", "Preset detail"],
@@ -328,6 +332,24 @@ function getPolicyRaw(sandboxName) {
   };
 }
 
+function getPolicyEndpoints(sandboxName) {
+  const raw = getPolicyRaw(sandboxName);
+  const endpoints = policies.getPresetEndpoints(raw.parsedPolicy || "");
+  return {
+    sandboxName,
+    endpoints,
+    endpointCount: endpoints.length,
+    parsedPolicy: raw.parsedPolicy,
+    command: {
+      success: raw.success,
+      label: raw.label,
+      exitCode: raw.exitCode,
+      stdout: raw.stdout,
+      stderr: raw.stderr,
+    },
+  };
+}
+
 function getStructuredSandboxStatus(sandboxName) {
   const sandbox = registry.getSandbox(sandboxName);
   const liveInference = getInferenceInfo().parsed;
@@ -441,6 +463,26 @@ function getNimGpuInfo() {
   };
 }
 
+function getDefaultLocalModel() {
+  const gpu = nim.detectGpu();
+  const runCapture = (command, options = {}) => {
+    const result = runCommand("bash", ["-lc", command], options);
+    return `${result.stdout}${result.stderr}`.trim();
+  };
+  const installedModels = localInference.getOllamaModelOptions(runCapture);
+  const bootstrapModels = localInference.getBootstrapOllamaModelOptions(gpu);
+  const recommendedModel = localInference.getDefaultOllamaModel(runCapture, gpu);
+  return {
+    provider: "ollama-local",
+    gpu,
+    installedModels,
+    bootstrapModels,
+    recommendedModel,
+    usingInstalledModels: installedModels.length > 0,
+    baseUrl: localInference.getLocalProviderBaseUrl("ollama-local"),
+  };
+}
+
 function getSandboxNimInfo(sandboxName) {
   const sandbox = registry.getSandbox(sandboxName);
   const model = sandbox?.model || null;
@@ -511,6 +553,30 @@ async function getPortPreflight(port) {
   const safePort = getForwardPort(port);
   const result = await preflight.checkPortAvailable(safePort);
   return { port: safePort, ...result };
+}
+
+function getEnvironmentSummary(query) {
+  const docker = platformInfo.detectDockerHost();
+  const dockerVersion = runCommand("docker", ["version", "--format", "{{json .}}"]);
+  const openshellVersion = onboard.getInstalledOpenshellVersion();
+  const portValues = String(query.get("ports") || `${DEFAULT_FORWARD_PORT}`)
+    .split(",")
+    .map((value) => Number(String(value).trim()))
+    .filter((value) => Number.isInteger(value) && value > 0 && value <= 65535);
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    nodeVersion: process.version,
+    isWsl: platformInfo.isWsl(),
+    dockerHost: docker,
+    containerRuntime: platformInfo.inferContainerRuntime(`${dockerVersion.stdout}${dockerVersion.stderr}`),
+    openshellBinary,
+    openshellVersion,
+    stableGatewayImageRef: onboard.getStableGatewayImageRef(),
+    gpu: nim.detectGpu(),
+    gateway: getGatewayStatus(),
+    ports: portValues,
+  };
 }
 
 function getOnboardPreview(body = {}) {
@@ -935,6 +1001,9 @@ async function handle(req, res, url) {
   if (req.method === "GET" && pathname === "/api/gateway/status") {
     return sendJson(res, 200, getGatewayStatus());
   }
+  if (req.method === "GET" && pathname === "/api/environment/summary") {
+    return sendJson(res, 200, getEnvironmentSummary(url.searchParams));
+  }
   if (req.method === "GET" && pathname === "/api/preflight/port") {
     const payload = await getPortPreflight(url.searchParams.get("port"));
     return sendJson(res, payload.ok ? 200 : 409, payload);
@@ -962,6 +1031,9 @@ async function handle(req, res, url) {
   if (req.method === "GET" && pathname === "/api/inference/local/ollama/models") {
     const models = localInference.getOllamaModelOptions((command, options = {}) => runCommand("bash", ["-lc", command], options).stdout);
     return sendJson(res, 200, { models });
+  }
+  if (req.method === "GET" && pathname === "/api/inference/local/default-model") {
+    return sendJson(res, 200, getDefaultLocalModel());
   }
   if (req.method === "GET" && pathname === "/api/inference/local/bootstrap-options") {
     return sendJson(res, 200, {
@@ -1093,6 +1165,11 @@ async function handle(req, res, url) {
   if (req.method === "GET" && match) {
     const sandboxName = normalizeSandboxName(decodeURIComponent(match[1]));
     return sendJson(res, 200, getPolicyRaw(sandboxName));
+  }
+  match = pathname.match(/^\/api\/sandboxes\/([^/]+)\/policy\/endpoints$/);
+  if (req.method === "GET" && match) {
+    const sandboxName = normalizeSandboxName(decodeURIComponent(match[1]));
+    return sendJson(res, 200, getPolicyEndpoints(sandboxName));
   }
   if (req.method === "POST" && match) {
     const sandboxName = normalizeSandboxName(decodeURIComponent(match[1]));
